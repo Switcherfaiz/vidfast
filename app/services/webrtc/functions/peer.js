@@ -180,8 +180,8 @@ function wire(pc, peerId, onRemote) {
   }, 8000);
 }
 
-function makePeerConnection(peerId, onRemote, options = {}) {
-  const pc = new RTCPeerConnection(getRtcConfiguration(options));
+async function makePeerConnection(peerId, onRemote, options = {}) {
+  const pc = new RTCPeerConnection(await getRtcConfiguration(options));
   pc._pendingCandidates = [];
   pc._makingOffer = false;
   pc._ignoreOffer = false;
@@ -213,7 +213,7 @@ export async function callPeer(peerId, onRemote) {
     return peers.get(peerId);
   }
 
-  const pc = makePeerConnection(peerId, onRemote);
+  const pc = await makePeerConnection(peerId, onRemote);
   if (isOfferer(peerId)) await sendOffer(pc, peerId, false);
   else rtcLog('peer', 'waiting for remote offer', { peerId });
   return pc;
@@ -228,9 +228,9 @@ async function acceptOffer(from, data, onRemote) {
   if (pc && (pc.connectionState === 'failed' || pc.signalingState === 'closed')) {
     const relayOnly = pc._relayOnly;
     closePeer(from);
-    pc = makePeerConnection(from, onRemote, { relayOnly });
+    pc = await makePeerConnection(from, onRemote, { relayOnly });
   }
-  if (!pc) pc = makePeerConnection(from, onRemote);
+  if (!pc) pc = await makePeerConnection(from, onRemote);
   else addLocalTracks(pc);
 
   const collision = pc._makingOffer || pc.signalingState !== 'stable';
@@ -246,7 +246,7 @@ async function acceptOffer(from, data, onRemote) {
       rtcLog('peer', 'rollback failed, recreating', { from, message: error?.message });
       const relayOnly = pc._relayOnly;
       closePeer(from);
-      pc = makePeerConnection(from, onRemote, { relayOnly });
+      pc = await makePeerConnection(from, onRemote, { relayOnly });
     }
   }
 
@@ -269,7 +269,7 @@ export async function handleSignal(from, data, onRemote) {
   }
 
   let pc = peers.get(from);
-  if (!pc && data.sdp) pc = makePeerConnection(from, onRemote);
+  if (!pc && data.sdp) pc = await makePeerConnection(from, onRemote);
   else if (pc) addLocalTracks(pc);
 
   if (data.sdp?.type === 'answer' && pc) {
@@ -360,9 +360,12 @@ function rebuildPeer(peerId, onRemote, { relayOnly = false, reason = '' } = {}) 
   const handler = onRemote || existing._onRemote;
   try { existing.close(); } catch (_) {}
   peers.delete(peerId);
-  const pc = makePeerConnection(peerId, handler, { relayOnly });
-  sendOffer(pc, peerId, false).catch((error) => {
-    rtcLog('ice', 'rebuild offer failed', { peerId, message: error?.message });
+  makePeerConnection(peerId, handler, { relayOnly }).then((pc) => {
+    sendOffer(pc, peerId, false).catch((error) => {
+      rtcLog('ice', 'rebuild offer failed', { peerId, message: error?.message });
+    });
+  }).catch((error) => {
+    rtcLog('ice', 'rebuild failed', { peerId, message: error?.message });
   });
 }
 
