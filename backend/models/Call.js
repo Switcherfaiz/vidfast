@@ -11,8 +11,14 @@ const participantSchema = new mongoose.Schema({
   videoPoster: { type: String, default: '' }
 }, { _id: true });
 
+function makeMeetingCode() {
+  const chunk = (n) => Math.random().toString(36).slice(2, 2 + n);
+  return `${chunk(3)}-${chunk(4)}-${chunk(3)}`.toLowerCase();
+}
+
 const callSchema = new mongoose.Schema({
   title: { type: String, default: 'Untitled call' },
+  code: { type: String, default: makeMeetingCode, unique: true, index: true },
   badge: { type: String, default: 'Team' },
   hostId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   invitedCount: { type: Number, default: 0 },

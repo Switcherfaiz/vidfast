@@ -5,7 +5,7 @@ export async function checkIntro() {
       introDone,
       shouldShowIntro: !introDone
     };
-  } catch (e) {
+  } catch (_) {
     return {
       introDone: false,
       shouldShowIntro: false

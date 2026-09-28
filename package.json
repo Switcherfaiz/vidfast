@@ -5,18 +5,18 @@
   "version": "1.0.0",
   "description": "VidFast — video meetings built with switch-framework",
   "scripts": {
-    "start": "node server.cjs",
-    "dev": "node server.cjs",
+    "start": "node server.js",
+    "dev": "node server.js",
     "dev:backend": "npm start --prefix backend",
     "dev:all": "node scripts/dev-all.js",
-    "install:backend": "npm install --prefix backend",
-    "link:framework": "npm link ../switch-framework"
+    "install:backend": "npm install --prefix backend"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "switch-framework": "^0.2.8",
-    "switch-framework-backend": "^0.2.1",
-    "express-session": "^1.18.1"
+    "esbuild": "^0.28.0",
+    "express": "^4.19.2",
+    "switch-framework": "^0.2.9",
+    "switch-framework-backend": "^0.2.9"
   },
   "switchFramework": {
     "port": 3002

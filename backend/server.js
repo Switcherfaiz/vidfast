@@ -1,42 +1,64 @@
 import 'dotenv/config';
+import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import { PORT, MONGODB_URI, CLIENT_ORIGIN } from './constants/index.js';
+import { createRoom, getRoom, publicRoom, setRoomPassword } from './lib/rooms.js';
+import { attachSignal } from './lib/signal.js';
 import { connectDb } from './config/db.js';
-import { seedIfEmpty } from './seed.js';
-import { createApiRouter } from './routes/index.js';
-import { authApi } from './services/auth/index.js';
-import { requireAuth } from './middlewares/requireAuth.js';
-import { notFound, errorHandler } from './middlewares/errorHandler.js';
+
+const PORT = Number(process.env.PORT || 4002);
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3002';
 
 const app = express();
-
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+app.use(express.json({ limit: '32kb' }));
 
-app.use('/api/auth', authApi);
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.use('/api', requireAuth, createApiRouter());
-app.use(notFound);
-app.use(errorHandler);
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'persistent-mongo' }));
 
-async function start() {
+app.post('/api/rooms', async (req, res, next) => {
   try {
-    await connectDb(MONGODB_URI);
-    await seedIfEmpty();
-    console.log(`MongoDB connected (${MONGODB_URI})`);
-  } catch (err) {
-    console.error('MongoDB connection failed. Start MongoDB and retry.');
-    console.error(err.message);
-    process.exit(1);
+    const room = await createRoom(req.body?.title, req.body?.password);
+    res.status(201).json({ room: publicRoom(room) });
+  } catch (error) {
+    next(error);
   }
+});
 
-  app.listen(PORT, () => {
-    console.log(`VidFast API running at http://localhost:${PORT}`);
-  });
-}
+app.get('/api/rooms/:code', async (req, res, next) => {
+  try {
+    const room = await getRoom(req.params.code);
+    if (!room) return res.status(404).json({ error: 'Meeting not found.' });
+    res.json({ room: publicRoom(room) });
+  } catch (error) {
+    next(error);
+  }
+});
 
-start();
+app.post('/api/rooms/:code/password', async (req, res, next) => {
+  try {
+    const room = await getRoom(req.params.code);
+    if (!room) return res.status(404).json({ error: 'Meeting not found.' });
+    if (room.peers.size > 0) {
+      return res.status(409).json({ error: 'Lock the room from inside the call once people have joined.' });
+    }
+    await setRoomPassword(room, req.body?.password);
+    res.json({ room: publicRoom(room) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((error, _req, res, _next) => {
+  console.error('[vf:api]', error);
+  res.status(500).json({ error: 'Server error' });
+});
+
+const server = http.createServer(app);
+attachSignal(server);
+
+const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vidfast';
+await connectDb(mongoUri);
+server.listen(PORT, () => {
+  console.log(`VidFast signaling (MongoDB rooms) at http://localhost:${PORT}`);
+});

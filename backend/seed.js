@@ -72,10 +72,17 @@ async function ensureDemoUser() {
 export async function seedIfEmpty() {
   const user = await ensureDemoUser();
 
+  const missing = await Call.find({ $or: [{ code: { $exists: false } }, { code: '' }, { code: null }] });
+  for (const [i, call] of missing.entries()) {
+    call.code = i === 0 ? 'vah-twav-zpv' : `${Math.random().toString(36).slice(2, 5)}-${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 5)}`;
+    await call.save();
+  }
+
   if (await Call.countDocuments() > 0) return;
 
   const call = await Call.create({
     title: 'Overview of new real estate proposals',
+    code: 'vah-twav-zpv',
     badge: 'Team',
     hostId: user._id,
     invitedCount: 6,

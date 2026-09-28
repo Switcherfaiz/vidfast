@@ -1,71 +1,73 @@
-import { StackLayout, createState, updateState, registerComponents } from 'switch-framework';
-import { fetchSession, apiSend, apiGet } from './api.js';
+import { StackLayout, ensureState, updateState } from 'switch-framework';
+import { hydrateGuest } from './lib/session.js';
 import { VfSplashScreen } from '../components/VfSplashScreen/index.js';
+
 import { VfIndexScreen } from './index.js';
-import { VfCallScreen } from './call/[id].js';
-import { VfLoginScreen } from './login/index.js';
+import { VfIntroScreen } from './intro/index.js';
+import { VfJoinScreen } from './join/index.js';
+import { VfMeetScreen } from './meet/index.js';
+import { VfProfileScreen } from './profile/index.js';
 import { VfNotFoundScreen } from './+not-found.js';
 
-import '../components/VfSidebar/index.js';
-import '../components/VfCallHeader/index.js';
-import '../components/VfMainVideo/index.js';
-import '../components/VfTranscriptBar/index.js';
 import '../components/VfChatPanel/index.js';
+import '../components/VfChatHeader/index.js';
+import '../components/VfChatTabs/index.js';
+import '../components/VfChatThread/index.js';
+import '../components/VfThreadBubble/index.js';
+import '../components/VfChatComposer/index.js';
+import '../components/VfReadyCard/index.js';
 import '../components/VfAvatar/index.js';
-import '../components/VfBadge/index.js';
-import '../components/VfButton/index.js';
-
-registerComponents([VfSplashScreen]);
+import '../components/VfProfileSheet/index.js';
+import '../components/VfMeetSettingsSheet/index.js';
+import '../components/VfPasswordSheet/index.js';
+import '../components/VfStageGrid/index.js';
 
 export class VfStackLayout extends StackLayout {
   static tag = 'vf-stack-layout';
-  static stackScreens = [VfIndexScreen, VfCallScreen, VfLoginScreen, VfNotFoundScreen];
+  static stackScreens = [
+    VfIndexScreen,
+    VfIntroScreen,
+    VfJoinScreen,
+    VfProfileScreen,
+    VfMeetScreen,
+    VfNotFoundScreen
+  ];
   static splash = 'vf-splashscreen';
   static initialRoute = 'index';
 
   static async init({ renderSplashscreen }) {
     renderSplashscreen('vf-splashscreen');
 
-    const boot = (key, value) => { try { createState(key, value); } catch (_) {} };
+    const boot = (key, value) => ensureState(key, value);
     boot('user', null);
-    boot('calls', []);
     boot('active-call', null);
     boot('call-messages', []);
-    boot('call-timer', 0);
-    boot('sidebar-active', 'calls');
+    boot('call-thread-loading', false);
     boot('chat-tab', 'messages');
-    boot('call-controls', { muted: false, cameraOn: true, volume: 70 });
+    boot('chat-open', false);
+    boot('call-controls', { muted: false, cameraOn: true, volume: 70, captions: false, hand: false, backdrop: 'none' });
+    boot('intro-step', 0);
+    boot('meeting-link', '');
+    boot('profile-open', false);
+    boot('meet-settings-open', false);
+    boot('password-prompt-open', false);
+    boot('password-prompt-reason', '');
+    boot('room-off', null);
+    boot('in-room', false);
+    boot('ready-dismissed', false);
+    boot('focused-peer', null);
+    boot('join-status', 'idle');
+    boot('join-error', '');
+    boot('meeting-password', '');
+    boot('webrtc-diagnostics', { status: 'idle', transport: 'unknown', entries: [] });
 
-    let user = null;
-    let calls = [];
+    const guest = hydrateGuest();
+    updateState('user', guest);
 
-    try {
-      const session = await fetchSession();
-      user = session?.user || null;
-
-      if (!user) {
-        const login = await apiSend('/auth/login', 'POST', {
-          email: 'kate@vidfast.app',
-          password: 'vid123'
-        }).catch(() => null);
-        user = login?.user || null;
-      }
-
-      if (user) {
-        const res = await apiGet('/calls').catch(() => ({ calls: [] }));
-        calls = Array.isArray(res?.calls) ? res.calls : [];
-        if (calls[0]?.id) {
-          updateState('active-call', calls[0]);
-        }
-      }
-    } catch (_) {}
-
-    updateState('user', user);
-    updateState('calls', calls);
-
+    const hasIntro = localStorage.getItem('intro') === 'true';
     return {
       splash: 'vf-splashscreen',
-      initialRoute: user && calls[0]?.id ? `call/${calls[0].id}` : 'index'
+      initialRoute: hasIntro ? 'index' : 'intro'
     };
   }
 }

@@ -1,71 +1,90 @@
-import { SwitchComponent, getState, createProps, registerComponent, useShared } from 'switch-framework';
+import { SwitchComponent, getState, registerComponent, onState } from 'switch-framework';
+import '../VfChatHeader/index.js';
 import '../VfChatTabs/index.js';
-import '../VfChatMessage/index.js';
-import '../VfChatInput/index.js';
-import '../VfAvatar/index.js';
-import { escapeHtml } from '../../app/lib/utils.js';
+import '../VfChatThread/index.js';
+import '../VfChatComposer/index.js';
+import { escapeHtml } from '../../app/lib/html.js';
 import { styleSheet } from './stylesheet.js';
+import { bindChatPanel } from './functionalities.js';
+import { onRoomEvent } from '../../app/lib/roomEvents.js';
 
 export class VfChatPanel extends SwitchComponent {
   static tag = 'vf-chat-panel';
-  static { this.useState('chat-tab'); this.useState('call-messages'); this.useState('active-call'); }
 
-  effects() {
-    useShared('call-messages', []);
-    useShared('chat-tab', 'messages');
+  onMount() {
+    bindChatPanel(this);
+    onState('chat-tab', (tab) => this._paintTab(tab));
+    onState('active-call', () => this._paintPeople());
+    onState('user', () => this._paintPeople());
+    onState('in-room', () => this._paintPeople());
+    onState('call-controls', () => this._paintPeople());
+    this._roomOff = onRoomEvent('peers-changed', () => this._paintPeople());
+    this._paintTab(getState('chat-tab') || 'messages');
+    this._paintPeople();
   }
 
-  renderParticipants() {
-    const call = getState('active-call') || {};
-    const participants = (call.participants || []).filter((p) => p.role !== 'invite');
-
-    return `
-      <div class="participants">
-        ${participants.map((p) => `
-          <div class="person">
-            <vf-avatar data="${createProps({ src: p.avatar, name: p.name, size: 36 })}"></vf-avatar>
-            <div class="meta">
-              <strong>${escapeHtml(p.name)}</strong>
-              <span>${p.absent ? 'Absent' : p.muted ? 'Muted' : 'Connected'}</span>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
+  onDestroy() {
+    if (typeof this._roomOff === 'function') this._roomOff();
   }
 
-  renderMessages() {
-    const messages = getState('call-messages') || [];
-    const call = getState('active-call') || {};
-    const typing = call.typingUser;
+  _paintTab(tab) {
+    const messages = tab !== 'participants';
+    const thread = this.select('#msg-pane');
+    const people = this.select('#people-pane');
+    if (thread) thread.hidden = !messages;
+    if (people) people.hidden = messages;
+  }
 
-    return `
-      <div class="messages">
-        ${messages.map((m) => `
-          <vf-chat-message data="${createProps({
-            authorName: m.authorName,
-            avatar: m.avatar,
-            text: m.text,
-            type: m.type,
-            outgoing: m.outgoing
-          })}"></vf-chat-message>
-        `).join('')}
-        ${typing ? `<div class="typing">${escapeHtml(typing)} is typing…</div>` : ''}
+  _paintPeople() {
+    const pane = this.select('#people-list');
+    if (!pane) return;
+    const call = getState('active-call') || {};
+    const user = getState('user') || {};
+    const live = !!getState('in-room');
+    const isHost = call.hostId && call.hostId === user.id;
+    let participants = (call.participants || []).filter((p) => p && p.role !== 'invite');
+
+    if (!participants.length) {
+      const controls = getState('call-controls') || {};
+      participants = [{
+        ...user,
+        isSelf: true,
+        role: 'You',
+        muted: !!controls.muted,
+        cameraOn: controls.cameraOn !== false
+      }];
+    }
+
+    if (!participants.length) {
+      pane.innerHTML = `<p class="empty-note">${live ? 'No one here yet.' : 'Join the call to see everyone in the room.'}</p>`;
+      return;
+    }
+
+    pane.innerHTML = participants.map((p) => `
+      <div class="person">
+        <img src="${escapeHtml(p.avatar || '')}" alt="" />
+        <div class="meta">
+          <strong>${escapeHtml(p.name || 'Guest')}</strong>
+          <span>${p.isSelf ? (live ? 'You' : 'You · not joined yet') : p.role === 'Host' ? 'Host' : p.muted ? 'Muted' : p.cameraOn === false ? 'Camera off' : 'In the room'}</span>
+        </div>
+        ${isHost && live && !p.isSelf ? `<button class="kick" data-kick="${escapeHtml(p.id)}" type="button">Kick</button>` : ''}
+        ${live && !p.isSelf ? `<button class="soft" data-soft-mute="${escapeHtml(p.id)}" type="button">Mute for me</button>` : ''}
       </div>
-      <vf-chat-input></vf-chat-input>
-    `;
+    `).join('');
   }
 
   render() {
-    const tab = getState('chat-tab') || 'messages';
-
     return `
       <aside class="chat-panel">
-        <div class="head">
-          <h2>Group Chat</h2>
-        </div>
+        <vf-chat-header></vf-chat-header>
         <vf-chat-tabs></vf-chat-tabs>
-        ${tab === 'participants' ? this.renderParticipants() : this.renderMessages()}
+        <div id="msg-pane" class="pane">
+          <vf-chat-thread></vf-chat-thread>
+          <vf-chat-composer></vf-chat-composer>
+        </div>
+        <div id="people-pane" class="pane" hidden>
+          <div class="participants" id="people-list"></div>
+        </div>
       </aside>
     `;
   }
