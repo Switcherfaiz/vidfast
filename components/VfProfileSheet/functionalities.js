@@ -1,6 +1,5 @@
 import { getState, updateState } from 'switch-framework';
-import { applyBackdrop } from '../../app/lib/media.js';
-import { broadcastProfile } from '../../app/lib/roomSession.js';
+import { webrtc, signaling } from '../../app/services/index.js';
 import { saveGuestProfile } from '../../app/lib/guestProfile.js';
 
 export function bindProfileSheet(host) {
@@ -14,8 +13,8 @@ export function bindProfileSheet(host) {
     if (!mode) return;
     const prev = getState('call-controls') || {};
     updateState('call-controls', { ...prev, backdrop: mode });
-    applyBackdrop(mode);
-    if (getState('in-room')) broadcastProfile({ backdrop: mode });
+    webrtc.applyBackdrop(mode);
+    if (getState('in-room')) signaling.broadcastProfile({ backdrop: mode });
   });
 
   host.listener('#profile-save', 'click', () => {

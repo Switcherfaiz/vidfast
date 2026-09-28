@@ -1,7 +1,6 @@
 import { getState, updateState } from 'switch-framework';
 import { avatarSvg, saveGuest } from './guest.js';
-import { applyBackdrop } from './media.js';
-import { broadcastProfile } from './roomSession.js';
+import { webrtc, signaling } from '../services/index.js';
 
 export const GUEST_COLORS = ['#14b8a6', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#6366f1'];
 export const BACKDROPS = [
@@ -29,10 +28,10 @@ export function saveGuestProfile({ name, color, backdrop } = {}) {
   const controls = getState('call-controls') || {};
   const nextBackdrop = backdrop || controls.backdrop || 'none';
   updateState('call-controls', { ...controls, backdrop: nextBackdrop });
-  applyBackdrop(nextBackdrop);
+  webrtc.applyBackdrop(nextBackdrop);
 
   if (getState('in-room')) {
-    broadcastProfile({
+    signaling.broadcastProfile({
       name: next.name,
       avatar: next.avatar,
       muted: !!controls.muted,

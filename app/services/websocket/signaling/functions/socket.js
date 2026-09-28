@@ -1,4 +1,4 @@
-import { rtcLog, setRtcStatus } from './webrtcDiagnostics.js';
+import { rtcLog, setRtcStatus } from '../../../webrtc/functions/diagnostics.js';
 
 let socket = null;
 const listeners = new Set();

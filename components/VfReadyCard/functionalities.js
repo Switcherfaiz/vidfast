@@ -2,7 +2,7 @@ import { getState, updateState } from 'switch-framework';
 import { meetingShareUrl } from '../../app/lib/meeting.js';
 import { icon } from '../../app/lib/icons.js';
 import { enterFromMeet } from '../../app/meet/functionalities.js';
-import { setRoomPassword } from '../../app/lib/roomSession.js';
+import { signaling } from '../../app/services/index.js';
 
 export function bindReadyCard(host) {
   host.listener('#ready-close', 'click', () => {
@@ -48,7 +48,7 @@ export function bindReadyCard(host) {
   host.listener('#ready-lock', 'click', () => {
     const password = prompt('Set a temporary room password (empty to unlock)');
     if (password == null) return;
-    setRoomPassword(password);
+    signaling.setRoomPassword(password);
     updateState('meeting-password', password);
     const call = getState('active-call') || {};
     updateState('active-call', { ...call, hasPassword: !!password });

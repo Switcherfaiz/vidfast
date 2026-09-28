@@ -2,8 +2,7 @@ import 'dotenv/config';
 import http from 'node:http';
 import express from 'express';
 import cors from 'cors';
-import { createRoom, getRoom, publicRoom, setRoomPassword } from './lib/rooms.js';
-import { attachSignal } from './lib/signal.js';
+import { signaling } from './services/websocket/signaling/index.js';
 import { connectDb } from './config/db.js';
 
 const PORT = Number(process.env.PORT || 4002);
@@ -17,8 +16,8 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'persistent-mon
 
 app.post('/api/rooms', async (req, res, next) => {
   try {
-    const room = await createRoom(req.body?.title, req.body?.password);
-    res.status(201).json({ room: publicRoom(room) });
+    const room = await signaling.createRoom(req.body?.title, req.body?.password);
+    res.status(201).json({ room: signaling.publicRoom(room) });
   } catch (error) {
     next(error);
   }
@@ -26,9 +25,9 @@ app.post('/api/rooms', async (req, res, next) => {
 
 app.get('/api/rooms/:code', async (req, res, next) => {
   try {
-    const room = await getRoom(req.params.code);
+    const room = await signaling.getRoom(req.params.code);
     if (!room) return res.status(404).json({ error: 'Meeting not found.' });
-    res.json({ room: publicRoom(room) });
+    res.json({ room: signaling.publicRoom(room) });
   } catch (error) {
     next(error);
   }
@@ -36,13 +35,13 @@ app.get('/api/rooms/:code', async (req, res, next) => {
 
 app.post('/api/rooms/:code/password', async (req, res, next) => {
   try {
-    const room = await getRoom(req.params.code);
+    const room = await signaling.getRoom(req.params.code);
     if (!room) return res.status(404).json({ error: 'Meeting not found.' });
     if (room.peers.size > 0) {
       return res.status(409).json({ error: 'Lock the room from inside the call once people have joined.' });
     }
-    await setRoomPassword(room, req.body?.password);
-    res.json({ room: publicRoom(room) });
+    await signaling.setRoomPassword(room, req.body?.password);
+    res.json({ room: signaling.publicRoom(room) });
   } catch (error) {
     next(error);
   }
@@ -55,7 +54,7 @@ app.use((error, _req, res, _next) => {
 });
 
 const server = http.createServer(app);
-attachSignal(server);
+signaling.attachSignal(server);
 
 const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vidfast';
 await connectDb(mongoUri);

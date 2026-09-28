@@ -1,5 +1,5 @@
 import { getState } from 'switch-framework';
-import { sendRoomChat } from '../../app/lib/roomSession.js';
+import { signaling } from '../../app/services/index.js';
 
 export function bindChatComposer(host) {
   const resize = () => {
@@ -17,7 +17,7 @@ export function bindChatComposer(host) {
     const input = host.select('#vf-chat-input');
     const text = String(input?.value || '').trim();
     if (!text) return;
-    if (!sendRoomChat(text)) return;
+    if (!signaling.sendRoomChat(text)) return;
     input.value = '';
     resize();
   };

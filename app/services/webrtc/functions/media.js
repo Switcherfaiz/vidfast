@@ -1,4 +1,4 @@
-import { rtcLog } from './webrtcDiagnostics.js';
+import { rtcLog } from './diagnostics.js';
 
 const remotes = new Map();
 const remoteListeners = new Set();

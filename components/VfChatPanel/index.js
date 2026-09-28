@@ -6,7 +6,7 @@ import '../VfChatComposer/index.js';
 import { escapeHtml } from '../../app/lib/html.js';
 import { styleSheet } from './stylesheet.js';
 import { bindChatPanel } from './functionalities.js';
-import { onRoomEvent } from '../../app/lib/roomEvents.js';
+import { signaling } from '../../app/services/index.js';
 
 export class VfChatPanel extends SwitchComponent {
   static tag = 'vf-chat-panel';
@@ -18,7 +18,7 @@ export class VfChatPanel extends SwitchComponent {
     onState('user', () => this._paintPeople());
     onState('in-room', () => this._paintPeople());
     onState('call-controls', () => this._paintPeople());
-    this._roomOff = onRoomEvent('peers-changed', () => this._paintPeople());
+    this._roomOff = signaling.onRoomEvent('peers-changed', () => this._paintPeople());
     this._paintTab(getState('chat-tab') || 'messages');
     this._paintPeople();
   }

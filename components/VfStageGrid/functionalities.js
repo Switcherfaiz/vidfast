@@ -1,22 +1,12 @@
 import { getState, updateState } from 'switch-framework';
-import {
-  startLocalMedia,
-  setLocalVideoEl,
-  getRemoteStream,
-  getRemotePeerIds,
-  onRemoteStreams,
-  applyBackdrop
-} from '../../app/lib/media.js';
-import { onRoomEvent } from '../../app/lib/roomEvents.js';
+import { webrtc, signaling } from '../../app/services/index.js';
 import { escapeHtml } from '../../app/lib/html.js';
 import { icon } from '../../app/lib/icons.js';
-import { rtcLog } from '../../app/lib/webrtcDiagnostics.js';
-import { getPeerMediaState } from '../../app/lib/webrtc.js';
 
 export function bindStageGrid(host) {
   host._page = 0;
-  setLocalVideoEl(host.select('#local-video'));
-  startLocalMedia().then((stream) => {
+  webrtc.setLocalVideoEl(host.select('#local-video'));
+  webrtc.startLocalMedia().then((stream) => {
     if (!stream) {
       const prev = getState('call-controls') || {};
       updateState('call-controls', { ...prev, cameraOn: false });
@@ -53,9 +43,9 @@ export function bindStageGrid(host) {
     host.repaint();
   });
 
-  const offPeers = onRoomEvent('peers-changed', () => host.repaint());
-  const offStreams = onRoomEvent('streams-changed', () => host.attachAllRemotes());
-  const unsubRemote = onRemoteStreams(() => host.repaint());
+  const offPeers = signaling.onRoomEvent('peers-changed', () => host.repaint());
+  const offStreams = signaling.onRoomEvent('streams-changed', () => host.attachAllRemotes());
+  const unsubRemote = webrtc.onRemoteStreams(() => host.repaint());
 
   host._gridOff = () => {
     offPeers();
@@ -112,11 +102,12 @@ export function paintStageGrid(host) {
     const face = tile.querySelector('.face');
     if (face) face.textContent = (p.name || 'G').charAt(0);
     tile.classList.toggle('off', p.cameraOn === false);
-    const media = getPeerMediaState(p.id);
-    tile.classList.toggle('connecting', !getRemoteStream(p.id) && media.connection !== 'connected' && media.connection !== 'failed');
+    const media = webrtc.getPeerMediaState(p.id);
+    const connected = media.connection === 'connected' || media.ice === 'connected' || media.ice === 'completed';
+    tile.classList.toggle('connecting', !connected && media.connection !== 'failed' && media.ice !== 'failed');
     tile.classList.toggle('failed', media.connection === 'failed' || media.ice === 'failed');
     attachRemote(host, p.id, tile);
-    applyBackdrop(p.backdrop || 'none', tile.querySelector('video'));
+    webrtc.applyBackdrop(p.backdrop || 'none', tile.querySelector('video'));
   });
 
   ensureSelfExpand(host);
@@ -207,7 +198,7 @@ function paintSelfTile(host) {
   if (face) face.textContent = (user.name || 'You').charAt(0);
   host.select('#local-tile')?.classList.toggle('off', controls.cameraOn === false);
   host.select('#cam-off')?.classList.toggle('show', controls.cameraOn === false);
-  applyBackdrop(controls.backdrop || 'none', host.select('#local-video'));
+  webrtc.applyBackdrop(controls.backdrop || 'none', host.select('#local-video'));
   paintFocus(host);
 }
 
@@ -235,7 +226,7 @@ export function attachAllRemotes(host) {
   const call = getState('active-call') || {};
   const ids = new Set([
     ...(call.participants || []).filter((p) => p && !p.isSelf && p.id).map((p) => p.id),
-    ...getRemotePeerIds()
+    ...webrtc.getRemotePeerIds()
   ]);
   ids.forEach((id) => attachRemote(host, id));
 }
@@ -243,12 +234,12 @@ export function attachAllRemotes(host) {
 function attachRemote(host, peerId, tileEl = null) {
   const tile = tileEl || host.select(`[data-peer="${cssEscape(peerId)}"]`);
   const video = tile?.querySelector('video');
-  const stream = getRemoteStream(peerId);
+  const stream = webrtc.getRemoteStream(peerId);
   if (!video || !stream) return;
   if (video.srcObject !== stream) video.srcObject = stream;
   video.muted = false;
   video.play?.().catch((error) => {
-    rtcLog('playback', 'remote autoplay blocked', { peerId, name: error?.name, message: error?.message });
+    webrtc.rtcLog('playback', 'remote autoplay blocked', { peerId, name: error?.name, message: error?.message });
     tile?.classList.add('tap-audio');
   });
 }

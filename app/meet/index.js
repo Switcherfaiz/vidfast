@@ -1,14 +1,13 @@
 import { SwitchComponent, getState, updateState, useEffect, onState } from 'switch-framework';
 import { replace, useParams, navigate } from 'switch-framework/router';
 import { fetchRoom } from '../api.js';
-import { enterRoom, leaveRoom } from '../lib/roomSession.js';
+import { signaling } from '../services/index.js';
 import { hydrateGuest } from '../lib/session.js';
 import { icon } from '../lib/icons.js';
 import { meetingShareUrl } from '../lib/meeting.js';
 import { escapeHtml, formatTimer } from '../lib/html.js';
 import { styleSheet } from './stylesheet.js';
 import { bindMeeting, paintTopbar } from './functionalities.js';
-import { onRoomEvent } from '../lib/roomEvents.js';
 import { requestMeetingPassword } from '../lib/passwordPrompt.js';
 
 export class VfMeetScreen extends SwitchComponent {
@@ -49,7 +48,7 @@ export class VfMeetScreen extends SwitchComponent {
       this.select('#ready-wrap')?.classList.toggle('pw-open', open === true);
     });
 
-    this._roomOff = onRoomEvent('peers-changed', () => this._paintRoom());
+    this._roomOff = signaling.onRoomEvent('peers-changed', () => this._paintRoom());
 
     this._paintRoom();
     this._paintControls();
@@ -94,7 +93,7 @@ export class VfMeetScreen extends SwitchComponent {
           password = await requestMeetingPassword('Enter the password to join this locked room.');
           if (!password) return;
         }
-        await enterRoom(room.code, { password });
+        await signaling.enterRoom(room.code, { password });
         updateState('meeting-password', '');
         updateState('join-status', 'joined');
         updateState('ready-dismissed', true);
@@ -152,7 +151,7 @@ export class VfMeetScreen extends SwitchComponent {
         this._paintRoom();
         return;
       }
-      await enterRoom(id, { password });
+      await signaling.enterRoom(id, { password });
       if (!getState('in-room')) throw new Error('Could not connect to the room.');
       updateState('meeting-password', '');
       updateState('join-status', 'joined');
@@ -184,7 +183,7 @@ export class VfMeetScreen extends SwitchComponent {
 
   _leave() {
     updateState('focused-peer', null);
-    leaveRoom();
+    signaling.leaveRoom();
     navigate('join');
   }
 

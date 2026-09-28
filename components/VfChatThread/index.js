@@ -3,8 +3,7 @@ import '../VfThreadBubble/index.js';
 import { threadBubbleTag } from '../VfThreadBubble/index.js';
 import { icon } from '../../app/lib/icons.js';
 import { escapeHtml } from '../../app/lib/html.js';
-import { onSignal } from '../../app/lib/signal.js';
-import { appendCallMessage } from '../../app/lib/callChat.js';
+import { signaling } from '../../app/services/index.js';
 
 export class VfChatThread extends FlatList {
   static tag = 'vf-chat-thread';
@@ -33,9 +32,9 @@ export class VfChatThread extends FlatList {
         this.scrollToEnd({ animated: false });
       });
     });
-    const off = onSignal((msg) => {
+    const off = signaling.onSignal((msg) => {
       if (msg.type === 'chat' && msg.message) {
-        appendCallMessage(msg.message);
+        signaling.appendCallMessage(msg.message);
         if (this._nearBottom()) queueMicrotask(() => this.scrollToEnd({ animated: false }));
       }
     });

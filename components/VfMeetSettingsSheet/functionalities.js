@@ -1,8 +1,7 @@
 import { getState, updateState } from 'switch-framework';
 import { meetingShareUrl } from '../../app/lib/meeting.js';
 import { icon } from '../../app/lib/icons.js';
-import { setRoomPassword } from '../../app/lib/roomSession.js';
-import { diagnosticsText } from '../../app/lib/webrtcDiagnostics.js';
+import { webrtc, signaling } from '../../app/services/index.js';
 
 function canManageLock() {
   const call = getState('active-call') || {};
@@ -60,7 +59,7 @@ export function bindMeetSettings(host) {
 
   host.listener('#settings-copy-diagnostics', 'click', async () => {
     try {
-      await navigator.clipboard.writeText(diagnosticsText());
+      await navigator.clipboard.writeText(webrtc.diagnosticsText());
       setStatus(host, 'Connection logs copied');
     } catch (_) {
       setStatus(host, 'Could not copy connection logs', false);
@@ -88,7 +87,7 @@ export function bindMeetSettings(host) {
     setLockBusy(host, true);
     setStatus(host, 'Saving password…');
     try {
-      await setRoomPassword(password);
+      await signaling.setRoomPassword(password);
       updateState('meeting-password', password);
       setStatus(host, 'Room password updated');
       host._paintRoomMeta();
@@ -108,7 +107,7 @@ export function bindMeetSettings(host) {
     setLockBusy(host, true);
     setStatus(host, 'Removing lock…');
     try {
-      await setRoomPassword('');
+      await signaling.setRoomPassword('');
       updateState('meeting-password', '');
       const input = host.select('#settings-password');
       if (input) input.value = '';

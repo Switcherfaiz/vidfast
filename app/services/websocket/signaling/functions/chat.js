@@ -1,5 +1,5 @@
 import { getState, updateState } from 'switch-framework';
-import { hydrateGuest } from './session.js';
+import { hydrateGuest } from '../../../../lib/session.js';
 
 function meId() {
   return getState('user')?.id || hydrateGuest().id;

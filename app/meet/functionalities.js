@@ -1,7 +1,5 @@
 import { getState, updateState } from 'switch-framework';
-import { toggleTrack } from '../lib/media.js';
-import { broadcastProfile } from '../lib/roomSession.js';
-import { refreshLocalTracks } from '../lib/webrtc.js';
+import { webrtc, signaling } from '../services/index.js';
 
 let meetHostRef = null;
 
@@ -22,19 +20,19 @@ export function bindMeeting(host) {
   host.listener('#meet-mute', 'click', () => {
     const prev = getState('call-controls') || {};
     const muted = !prev.muted;
-    toggleTrack('audio', !muted);
-    refreshLocalTracks();
+    webrtc.toggleTrack('audio', !muted);
+    webrtc.refreshLocalTracks();
     updateState('call-controls', { ...prev, muted });
-    if (getState('in-room')) broadcastProfile({ muted });
+    if (getState('in-room')) signaling.broadcastProfile({ muted });
   });
 
   host.listener('#meet-cam', 'click', () => {
     const prev = getState('call-controls') || {};
     const cameraOn = !prev.cameraOn;
-    toggleTrack('video', cameraOn);
-    refreshLocalTracks();
+    webrtc.toggleTrack('video', cameraOn);
+    webrtc.refreshLocalTracks();
     updateState('call-controls', { ...prev, cameraOn });
-    if (getState('in-room')) broadcastProfile({ cameraOn });
+    if (getState('in-room')) signaling.broadcastProfile({ cameraOn });
   });
 
   host.listener('#meet-leave', 'click', () => {

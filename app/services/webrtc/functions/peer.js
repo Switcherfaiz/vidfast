@@ -1,9 +1,20 @@
-import { sendSignal } from './signal.js';
+import { getState } from 'switch-framework';
+import { sendSignal } from '../../websocket/signaling/functions/socket.js';
 import { getLocalStream, setRemoteStream, removeRemoteStream } from './media.js';
-import { getRtcConfiguration, shouldForceRelay } from './iceConfig.js';
-import { rtcLog, setRtcStatus } from './webrtcDiagnostics.js';
+import { getRtcConfiguration, shouldForceRelay } from './ice.js';
+import { rtcLog, setRtcStatus } from './diagnostics.js';
 
 const peers = new Map();
+
+function localPeerId() {
+  return getState('user')?.id || '';
+}
+
+export function isOfferer(peerId) {
+  const me = localPeerId();
+  if (!me || !peerId) return true;
+  return String(me) < String(peerId);
+}
 
 function serializeSdp(desc) {
   if (!desc) return null;
@@ -120,11 +131,15 @@ function wire(pc, peerId, onRemote) {
       muted: e.track?.muted,
       readyState: e.track?.readyState
     });
+    if (e.track?.muted) {
+      rtcLog('media', 'remote track is muted until ICE delivers packets', { peerId, kind: e.track.kind });
+    }
   };
   pc.onconnectionstatechange = () => {
     const state = pc.connectionState;
     rtcLog('peer', 'connection state changed', { peerId, state });
     setRtcStatus(state, { peerId });
+    onRemote?.(peerId, pc._vfRemote);
     if (state === 'connected') {
       clearTimeout(pc._watchdog);
       inspectSelectedPair(pc, peerId);
@@ -151,9 +166,18 @@ function wire(pc, peerId, onRemote) {
   clearTimeout(pc._watchdog);
   pc._watchdog = setTimeout(() => {
     if (pc.connectionState === 'connected' || pc.connectionState === 'closed') return;
+    if (pc.iceGatheringState === 'gathering') {
+      rtcLog('ice', 'still gathering candidates, delaying rebuild', { peerId });
+      pc._watchdog = setTimeout(() => {
+        if (pc.connectionState === 'connected' || pc.connectionState === 'closed') return;
+        rtcLog('ice', 'media path still not connected', { peerId, connection: pc.connectionState, ice: pc.iceConnectionState });
+        rebuildPeer(peerId, onRemote, { relayOnly: true, reason: 'watchdog' });
+      }, 5000);
+      return;
+    }
     rtcLog('ice', 'media path still not connected', { peerId, connection: pc.connectionState, ice: pc.iceConnectionState });
     rebuildPeer(peerId, onRemote, { relayOnly: true, reason: 'watchdog' });
-  }, 6000);
+  }, 8000);
 }
 
 function makePeerConnection(peerId, onRemote, options = {}) {
@@ -182,7 +206,6 @@ export function closeAllPeers() {
   [...peers.keys()].forEach(closePeer);
 }
 
-/** Joining peer calls each existing member; existing peers only answer. */
 export async function callPeer(peerId, onRemote) {
   if (!peerId) return null;
   if (peers.has(peerId)) {
@@ -191,24 +214,39 @@ export async function callPeer(peerId, onRemote) {
   }
 
   const pc = makePeerConnection(peerId, onRemote);
-  await sendOffer(pc, peerId, false);
+  if (isOfferer(peerId)) await sendOffer(pc, peerId, false);
+  else rtcLog('peer', 'waiting for remote offer', { peerId });
   return pc;
+}
+
+export async function connectPeer(peerId, onRemote) {
+  return callPeer(peerId, onRemote);
 }
 
 async function acceptOffer(from, data, onRemote) {
   let pc = peers.get(from);
+  if (pc && (pc.connectionState === 'failed' || pc.signalingState === 'closed')) {
+    const relayOnly = pc._relayOnly;
+    closePeer(from);
+    pc = makePeerConnection(from, onRemote, { relayOnly });
+  }
   if (!pc) pc = makePeerConnection(from, onRemote);
   else addLocalTracks(pc);
 
   const collision = pc._makingOffer || pc.signalingState !== 'stable';
   if (collision && pc.signalingState !== 'have-remote-offer') {
+    if (isOfferer(from)) {
+      rtcLog('peer', 'ignoring colliding offer; we are the offerer', { from, state: pc.signalingState });
+      return;
+    }
     rtcLog('peer', 'rolling back for remote offer', { from, state: pc.signalingState });
     try {
       await pc.setLocalDescription({ type: 'rollback' });
     } catch (error) {
       rtcLog('peer', 'rollback failed, recreating', { from, message: error?.message });
+      const relayOnly = pc._relayOnly;
       closePeer(from);
-      pc = makePeerConnection(from, onRemote, { relayOnly: pc._relayOnly });
+      pc = makePeerConnection(from, onRemote, { relayOnly });
     }
   }
 
@@ -238,10 +276,10 @@ export async function handleSignal(from, data, onRemote) {
     rtcLog('signal', 'received answer', { from, state: pc.signalingState });
     if (pc.signalingState !== 'have-local-offer') {
       rtcLog('signal', 'ignored answer in unexpected state', { from, state: pc.signalingState });
-      return;
+    } else {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      await flushPendingCandidates(pc);
     }
-    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    await flushPendingCandidates(pc);
   }
 
   if ((data.candidate || data.endOfCandidates) && pc) {
@@ -293,6 +331,10 @@ async function sendOffer(pc, peerId, iceRestart) {
 
 function restartPeerIce(pc, peerId) {
   if (pc._restartPending || pc.signalingState === 'closed') return;
+  if (!isOfferer(peerId)) {
+    rtcLog('ice', 'answerer waiting for ICE restart offer', { peerId });
+    return;
+  }
   pc._restartPending = true;
   rtcLog('ice', 'starting ICE restart', { peerId });
   Promise.resolve()
@@ -305,6 +347,10 @@ function restartPeerIce(pc, peerId) {
 function rebuildPeer(peerId, onRemote, { relayOnly = false, reason = '' } = {}) {
   const existing = peers.get(peerId);
   if (!existing || existing._rebuilding) return;
+  if (!isOfferer(peerId)) {
+    rtcLog('ice', 'answerer keeping connection; offerer will retry', { peerId, reason, state: existing.connectionState });
+    return;
+  }
   if (relayOnly && existing._relayOnly) {
     restartPeerIce(existing, peerId);
     return;

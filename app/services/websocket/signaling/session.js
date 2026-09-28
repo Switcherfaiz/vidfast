@@ -1,13 +1,17 @@
 import { getState, updateState } from 'switch-framework';
 import { navigate } from 'switch-framework/router';
-import { connectSignal, disconnectSignal, onSignal, sendSignal, isSignalConnected } from './signal.js';
-import { startLocalMedia, stopLocalMedia, toggleTrack, clearRemoteStreams } from './media.js';
-import { callPeer, handleSignal, closePeer, closeAllPeers, refreshLocalTracks, getPeerMediaState } from './webrtc.js';
-import { appendCallMessage, pushOptimisticCallMessage } from './callChat.js';
-import { hydrateGuest } from './session.js';
-import { lockRoom } from '../api.js';
-import { emitRoomEvent } from './roomEvents.js';
-import { rtcLog, setRtcStatus } from './webrtcDiagnostics.js';
+import { webrtc } from '../../webrtc/index.js';
+import {
+  connectSignal,
+  disconnectSignal,
+  onSignal,
+  sendSignal,
+  isSignalConnected
+} from './functions/socket.js';
+import { appendCallMessage, pushOptimisticCallMessage } from './functions/chat.js';
+import { emitRoomEvent } from './functions/events.js';
+import { hydrateGuest } from '../../../lib/session.js';
+import { lockRoom } from '../../../api.js';
 
 let roomLive = false;
 let signalRouterReady = false;
@@ -93,21 +97,16 @@ function handleRoomMessage(msg) {
     const peers = remotePeers(msg.peer.id);
     syncParticipants([...peers, msg.peer], msg.hostId || call.hostId);
     pushSystemMessage(`${msg.peer.name || 'Someone'} joined the room`);
-    setTimeout(() => {
-      if (!roomLive) return;
-      const state = getPeerMediaState(msg.peer.id);
-      if (state.connection !== 'new' && state.connection !== 'closed') return;
-      callPeer(msg.peer.id, onRemote).catch((error) => {
-        rtcLog('peer', 'fallback call to joining peer', { peerId: msg.peer.id, message: error?.message });
-      });
-    }, 3500);
+    webrtc.connectPeer(msg.peer.id, onRemote).catch((error) => {
+      webrtc.rtcLog('peer', 'connect to joining peer failed', { peerId: msg.peer.id, message: error?.message });
+    });
     return;
   }
 
   if (msg.type === 'peer-leave') {
     const call = getState('active-call') || {};
     const leaving = (call.participants || []).find((p) => p.id === msg.peerId);
-    closePeer(msg.peerId);
+    webrtc.closePeer(msg.peerId);
     syncParticipants(remotePeers(msg.peerId), msg.hostId || call.hostId);
     if (leaving?.name) pushSystemMessage(`${leaving.name} left the room`);
     return;
@@ -130,17 +129,17 @@ function handleRoomMessage(msg) {
 
   if (msg.type === 'signal') {
     ensureRemotePeer(msg.from);
-    handleSignal(msg.from, msg.data, onRemote).catch((error) => {
-      rtcLog('signal', 'peer signal handling failed', { from: msg.from, name: error?.name, message: error?.message });
+    webrtc.handleSignal(msg.from, msg.data, onRemote).catch((error) => {
+      webrtc.rtcLog('signal', 'peer signal handling failed', { from: msg.from, name: error?.name, message: error?.message });
     });
     return;
   }
 
   if (msg.type === 'closed') {
     if (roomLive) {
-      setRtcStatus('signal-lost');
+      webrtc.setRtcStatus('signal-lost');
       updateState('join-error', 'Connection to the meeting server was lost.');
-      rtcLog('signal', 'room signaling disconnected', { code: msg.code, reason: msg.reason });
+      webrtc.rtcLog('signal', 'room signaling disconnected', { code: msg.code, reason: msg.reason });
     }
     return;
   }
@@ -183,20 +182,20 @@ export async function enterRoom(code, { password = '' } = {}) {
   enterPromise = (async () => {
     try {
       try {
-        await startLocalMedia({ audio: true, video: controls.cameraOn !== false });
+        await webrtc.startLocalMedia({ audio: true, video: controls.cameraOn !== false });
       } catch (error) {
-        rtcLog('media', 'camera unavailable; trying audio only', { name: error?.name, message: error?.message });
+        webrtc.rtcLog('media', 'camera unavailable; trying audio only', { name: error?.name, message: error?.message });
         try {
-          await startLocalMedia({ audio: true, video: false });
+          await webrtc.startLocalMedia({ audio: true, video: false });
           updateState('call-controls', { ...controls, cameraOn: false });
         } catch (audioError) {
-          rtcLog('media', 'audio-only capture unavailable', { name: audioError?.name, message: audioError?.message });
+          webrtc.rtcLog('media', 'audio-only capture unavailable', { name: audioError?.name, message: audioError?.message });
           updateState('call-controls', { ...controls, muted: true, cameraOn: false });
         }
       }
       const next = getState('call-controls') || controls;
-      if (next.muted) toggleTrack('audio', false);
-      if (next.cameraOn === false) toggleTrack('video', false);
+      if (next.muted) webrtc.toggleTrack('audio', false);
+      if (next.cameraOn === false) webrtc.toggleTrack('video', false);
 
       const joined = await connectSignal({
         room: code,
@@ -223,10 +222,10 @@ export async function enterRoom(code, { password = '' } = {}) {
       syncParticipants(joined.peers || [], joined.room.hostId);
       updateState('in-room', true);
 
-      refreshLocalTracks();
+      webrtc.refreshLocalTracks();
       for (const peer of joined.peers || []) {
-        callPeer(peer.id, onRemote).catch((error) => {
-          rtcLog('peer', 'initial call failed', { peerId: peer.id, message: error?.message });
+        webrtc.connectPeer(peer.id, onRemote).catch((error) => {
+          webrtc.rtcLog('peer', 'initial connect failed', { peerId: peer.id, message: error?.message });
         });
       }
 
@@ -252,9 +251,9 @@ export function leaveRoom() {
   updateState('join-status', 'idle');
   updateState('join-error', '');
   disconnectSignal();
-  closeAllPeers();
-  clearRemoteStreams();
-  stopLocalMedia();
+  webrtc.closeAllPeers();
+  webrtc.clearRemoteStreams();
+  webrtc.stopLocalMedia();
   updateState('call-messages', []);
   updateState('active-call', null);
   notifyPeersChanged();
